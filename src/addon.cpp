@@ -203,13 +203,6 @@ static void on_reshade_overlay(effect_runtime *runtime)
 {
 	g_runtime = runtime;
 
-	ImGui::SetNextWindowSize(ImVec2(420, 0), ImGuiCond_FirstUseEver);
-	if (!ImGui::Begin("Reshade Effect Counter Toggler", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-	{
-		ImGui::End();
-		return;
-	}
-
 	if (ImGui::Button(g_manual_hidden ? "Show effects (manual)" : "Hide effects (manual)"))
 	{
 		g_manual_toggle = true;
@@ -299,8 +292,6 @@ static void on_reshade_overlay(effect_runtime *runtime)
 	ImGui::Separator();
 	ImGui::Text("Effects hidden: %s", g_effects_hidden ? "yes" : "no");
 	ImGui::Text("Groups open: %zu", std::count_if(g_groups.begin(), g_groups.end(), [](const ToggleGroup &g) { return g.open; }));
-
-	ImGui::End();
 }
 
 static std::string key_name(uint32_t key)
@@ -418,10 +409,10 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID)
 		reshade::register_addon(hinstDLL);
 		reshade::register_event<reshade::addon_event::reshade_present>(on_reshade_present);
 		reshade::register_event<reshade::addon_event::reshade_reloaded_effects>(on_reshade_reloaded_effects);
-		reshade::register_overlay("Reshade Effect Counter Toggler", on_reshade_overlay);
+		reshade::register_overlay(nullptr, on_reshade_overlay);
 		break;
 	case DLL_PROCESS_DETACH:
-		reshade::unregister_overlay("Reshade Effect Counter Toggler", on_reshade_overlay);
+		reshade::unregister_overlay(nullptr, on_reshade_overlay);
 		reshade::unregister_event<reshade::addon_event::reshade_reloaded_effects>(on_reshade_reloaded_effects);
 		reshade::unregister_event<reshade::addon_event::reshade_present>(on_reshade_present);
 		reshade::unregister_addon(hinstDLL);
