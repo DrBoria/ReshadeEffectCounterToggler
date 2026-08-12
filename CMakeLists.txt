@@ -4,7 +4,12 @@ project(ReshadeEffectCounterToggler LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_library(ReshadeEffectCounterToggler SHARED src/addon.cpp)
+add_library(ReshadeEffectCounterToggler SHARED
+	src/addon.cpp
+	src/config.cpp
+	src/effects.cpp
+	src/input.cpp
+)
 
 target_include_directories(ReshadeEffectCounterToggler PRIVATE include)
 
