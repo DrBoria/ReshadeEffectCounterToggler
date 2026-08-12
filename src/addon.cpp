@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -48,6 +49,28 @@ static bool g_need_reload_snapshot = false;
 static std::vector<std::pair<effect_technique, bool>> g_snapshot;
 
 static std::string key_name(uint32_t key);
+
+static bool are_keys_pressed(uint32_t keys, effect_runtime *runtime)
+{
+	uint8_t key0 = keys & 0xFF;
+	uint8_t key1 = (keys >> 8) & 0xFF;
+	uint8_t key2 = (keys >> 16) & 0xFF;
+	uint8_t key3 = (keys >> 24) & 0xFF;
+
+	bool ret = runtime->is_key_pressed(key0);
+	ret = ret && (key1 == 0 || runtime->is_key_down(0x11));
+	ret = ret && (key2 == 0 || runtime->is_key_down(0x10));
+	ret = ret && (key3 == 0 || runtime->is_key_down(0x12));
+	return ret;
+}
+
+static uint8_t reshade_last_key_pressed(effect_runtime *runtime)
+{
+	for (uint32_t i = 0x06; i < 256; i++)
+		if (runtime->is_key_pressed(static_cast<uint8_t>(i)))
+			return static_cast<uint8_t>(i);
+	return 0;
+}
 
 static void snapshot_effects()
 {
@@ -144,7 +167,7 @@ static void on_reshade_present(effect_runtime *runtime)
 			snapshot_effects();
 	}
 
-	if (g_global_fallback_key != 0 && runtime->is_key_pressed(g_global_fallback_key))
+	if (g_global_fallback_key != 0 && are_keys_pressed(g_global_fallback_key, runtime))
 	{
 		g_global_fallback_down = !g_global_fallback_down;
 		for (auto &group : g_groups)
@@ -154,7 +177,7 @@ static void on_reshade_present(effect_runtime *runtime)
 
 	for (auto &group : g_groups)
 	{
-		if (group.fallback_key != 0 && runtime->is_key_pressed(group.fallback_key))
+		if (group.fallback_key != 0 && are_keys_pressed(group.fallback_key, runtime))
 		{
 			group.fallback_down = !group.fallback_down;
 			group.open = group.fallback_down;
@@ -166,7 +189,7 @@ static void on_reshade_present(effect_runtime *runtime)
 		{
 			if (binding.key == 0)
 				continue;
-			if (runtime->is_key_pressed(binding.key))
+			if (are_keys_pressed(binding.key, runtime))
 			{
 				binding.down = !binding.down;
 				if (group.mode == GroupMode::Switch)
@@ -199,6 +222,42 @@ static void on_reshade_reloaded_effects(effect_runtime *runtime)
 		g_need_reload_snapshot = true;
 }
 
+static bool key_capture(const char *label, uint32_t *keys, effect_runtime *runtime)
+{
+	char buf[64];
+	std::string name = key_name(*keys);
+	strncpy_s(buf, sizeof(buf), name.c_str(), _TRUNCATE);
+
+	ImGui::InputTextWithHint(label, "Click to set keyboard shortcut", buf, sizeof(buf),
+		ImGuiInputTextFlags_ReadOnly | ImGuiInputTextFlags_NoUndoRedo | ImGuiInputTextFlags_NoHorizontalScroll);
+
+	if (ImGui::IsItemActive())
+	{
+		const uint32_t last_key_pressed = reshade_last_key_pressed(runtime);
+		if (last_key_pressed != 0)
+		{
+			if (ImGui::IsKeyPressed(ImGuiKey_Backspace, false))
+			{
+				*keys = 0;
+			}
+			else if (last_key_pressed < 0x10 || last_key_pressed > 0x12)
+			{
+				*keys = last_key_pressed;
+				*keys |= static_cast<uint32_t>(runtime->is_key_down(0x11)) << 8;
+				*keys |= static_cast<uint32_t>(runtime->is_key_down(0x10)) << 16;
+				*keys |= static_cast<uint32_t>(runtime->is_key_down(0x12)) << 24;
+			}
+			return true;
+		}
+	}
+	else if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("Click in the field and press any key to change the shortcut to that key.");
+	}
+
+	return false;
+}
+
 static void on_reshade_overlay(effect_runtime *runtime)
 {
 	g_runtime = runtime;
@@ -228,13 +287,7 @@ static void on_reshade_overlay(effect_runtime *runtime)
 	}
 
 	ImGui::Text("Global fallback key:");
-	ImGui::SameLine();
-	if (ImGui::Button(g_global_fallback_key == 0 ? "None" : key_name(g_global_fallback_key).c_str(), ImVec2(120, 0)))
-	{
-		uint32_t key = runtime->last_key_pressed();
-		if (key != 0)
-			g_global_fallback_key = key;
-	}
+	key_capture("##global_fallback", &g_global_fallback_key, runtime);
 
 	for (size_t i = 0; i < g_groups.size(); ++i)
 	{
@@ -250,24 +303,13 @@ static void on_reshade_overlay(effect_runtime *runtime)
 				group.mode = static_cast<GroupMode>(mode);
 
 			ImGui::Text("Fallback key:");
-			ImGui::SameLine();
-			if (ImGui::Button(group.fallback_key == 0 ? "None##fb" : key_name(group.fallback_key).c_str(), ImVec2(120, 0)))
-			{
-				uint32_t key = runtime->last_key_pressed();
-				if (key != 0)
-					group.fallback_key = key;
-			}
+			key_capture("##fallback", &group.fallback_key, runtime);
 
 			ImGui::Text("Keys:");
 			for (size_t k = 0; k < group.keys.size(); ++k)
 			{
 				ImGui::PushID(static_cast<int>(i * 100 + k));
-				if (ImGui::Button(group.keys[k].key == 0 ? "None" : key_name(group.keys[k].key).c_str(), ImVec2(120, 0)))
-				{
-					uint32_t key = runtime->last_key_pressed();
-					if (key != 0)
-						group.keys[k].key = key;
-				}
+				key_capture("##key", &group.keys[k].key, runtime);
 				ImGui::SameLine();
 				if (ImGui::Button("X"))
 				{
@@ -294,7 +336,7 @@ static void on_reshade_overlay(effect_runtime *runtime)
 	ImGui::Text("Groups open: %zu", std::count_if(g_groups.begin(), g_groups.end(), [](const ToggleGroup &g) { return g.open; }));
 }
 
-static std::string key_name(uint32_t key)
+static std::string vk_code_name(uint8_t key)
 {
 	switch (key)
 	{
@@ -304,9 +346,6 @@ static std::string key_name(uint32_t key)
 	case 0x08: return "Backspace";
 	case 0x09: return "Tab";
 	case 0x0D: return "Enter";
-	case 0x10: return "Shift";
-	case 0x11: return "Ctrl";
-	case 0x12: return "Alt";
 	case 0x1B: return "Esc";
 	case 0x20: return "Space";
 	case 0x21: return "PageUp";
@@ -399,6 +438,19 @@ static std::string key_name(uint32_t key)
 		return buf;
 	}
 	}
+}
+
+static std::string key_name(uint32_t keys)
+{
+	uint8_t key0 = keys & 0xFF;
+	uint8_t key1 = (keys >> 8) & 0xFF;
+	uint8_t key2 = (keys >> 16) & 0xFF;
+	uint8_t key3 = (keys >> 24) & 0xFF;
+
+	if (key0 == 0)
+		return "None";
+
+	return (key1 ? "Ctrl + " : std::string()) + (key2 ? "Shift + " : std::string()) + (key3 ? "Alt + " : std::string()) + vk_code_name(key0);
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID)
