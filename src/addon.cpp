@@ -214,7 +214,9 @@ static void show_effects()
 		return;
 	if (g_runtime == nullptr)
 		return;
-	apply_effects(true);
+	// Restore each technique to its saved snapshot state (only the ones that were active)
+	for (const auto &entry : g_snapshot)
+		g_runtime->set_technique_state(entry.first, entry.second);
 	if (g_effects_state_saved)
 	{
 		g_runtime->set_effects_state(g_effects_state);
