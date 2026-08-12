@@ -45,6 +45,25 @@ In the **Effect Counter Toggler** overlay tab:
 
 Keys support keyboard shortcuts (including Ctrl/Shift/Alt combos) and gamepad buttons (XInput).
 
+## Usage example (Elder Scrolls Online)
+
+A typical setup for ESO, where `M` opens the map, `Esc` opens the menu, and `Alt` is the universal "back" key that closes whatever screen is open:
+
+| Group | Keys | Purpose |
+|-------|------|---------|
+| **Map** | `M` | Toggle the map. Press `M` to open (effects hide), press `M` again to close (effects restore). |
+| **Menu** | `Esc` | Toggle the menu. Press `Esc` to open (effects hide), press `Esc` again to close (effects restore). |
+| **Global fallback** | `Alt` | Universal "back". Closes **all** open groups at once, so effects restore no matter which screen is open. |
+
+Setup steps in the **Effect Counter Toggler** overlay tab:
+
+1. Click **Add group** → rename it to `Map`, expand it, click **Add key**, then click the key field and press `M`.
+2. Click **Add group** → rename it to `Menu`, expand it, click **Add key**, then click the key field and press `Esc`.
+3. In **Global fallback key**, click the field and press `Alt`.
+4. Click **Save all groups** to persist the setup.
+
+Result: opening the map or menu hides all ReShade effects; closing them (or pressing `Alt`) restores everything automatically.
+
 ## Building
 
 Requires CMake and a C++17 compiler (MSVC recommended).

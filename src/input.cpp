@@ -79,19 +79,57 @@ static const char *g_gamepad_button_names[] = {
 	"Pad LB", "Pad RB", "Pad A", "Pad B", "Pad X", "Pad Y"
 };
 
+// Gamepad buttons are level-triggered (held while pressed), unlike keyboard keys
+// which are edge-triggered. We only want to act on a quick click (press + release
+// within a short window). Holding a button (long press) must NOT trigger anything.
+static constexpr DWORD kClickMaxDurationMs = 300;
+
+static uint16_t g_prev_gamepad_buttons = 0;
+static uint16_t g_gamepad_clicks = 0;      // buttons that completed a quick click this frame
+static uint16_t g_gamepad_held = 0;        // buttons currently held down
+static DWORD g_gamepad_press_time[kGamepadButtonCount] = {};
+
+void poll_gamepad()
+{
+	uint16_t buttons = gamepad_buttons();
+	uint16_t rising = buttons & ~g_prev_gamepad_buttons;
+	uint16_t falling = g_prev_gamepad_buttons & ~buttons;
+	DWORD now = GetTickCount();
+
+	// Clear clicks from the previous frame so each click is consumed exactly once.
+	g_gamepad_clicks = 0;
+
+	for (uint8_t i = 0; i < kGamepadButtonCount; i++)
+	{
+		uint16_t flag = g_gamepad_button_flags[i];
+		if (rising & flag)
+		{
+			g_gamepad_press_time[i] = now;
+			g_gamepad_held |= flag;
+		}
+		if (falling & flag)
+		{
+			g_gamepad_held &= ~flag;
+			// Only a quick press+release counts as a click; a long hold does not.
+			if (now - g_gamepad_press_time[i] <= kClickMaxDurationMs)
+				g_gamepad_clicks |= flag;
+		}
+	}
+
+	g_prev_gamepad_buttons = buttons;
+}
+
 static bool gamepad_button_pressed(uint8_t index)
 {
 	if (index >= kGamepadButtonCount)
 		return false;
-	uint16_t buttons = gamepad_buttons();
-	return (buttons & g_gamepad_button_flags[index]) != 0;
+	return (g_gamepad_clicks & g_gamepad_button_flags[index]) != 0;
 }
 
 static uint32_t gamepad_last_button_pressed()
 {
-	uint16_t buttons = gamepad_buttons();
 	for (uint8_t i = 0; i < kGamepadButtonCount; i++)
-		if ((buttons & g_gamepad_button_flags[i]) != 0)
+		if ((g_gamepad_clicks & g_gamepad_button_flags[i]) != 0)
 			return GP_FLAG | i;
 	return 0;
 }

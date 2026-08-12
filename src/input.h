@@ -12,6 +12,10 @@ namespace reshade::api
 // A key is a uint32_t: byte0 = main key (VK code), byte1 = Ctrl, byte2 = Shift,
 // byte3 = Alt. Bit 31 (GP_FLAG) marks a gamepad button (low byte = XInput index).
 
+// Polls the gamepad once per frame and computes rising-edge button presses.
+// Must be called once at the start of each present frame.
+void poll_gamepad();
+
 // True on the frame the given key (or gamepad button) is pressed.
 bool are_keys_pressed(uint32_t keys, reshade::api::effect_runtime *runtime);
 

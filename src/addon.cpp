@@ -32,6 +32,17 @@ static void on_reshade_present(effect_runtime *runtime)
 {
 	g_runtime = runtime;
 
+	// Load the saved groups/keys on the first frame so they are active before
+	// the overlay is ever opened (the overlay callback only runs when shown).
+	if (!g_config_loaded)
+	{
+		g_config_loaded = true;
+		load_groups(runtime);
+	}
+
+	// Poll gamepad once per frame so button presses are edge-triggered.
+	poll_gamepad();
+
 	if (g_manual_toggle)
 	{
 		g_manual_toggle = false;
@@ -126,7 +137,7 @@ static void on_reshade_overlay(effect_runtime *runtime)
 		load_groups(runtime);
 	}
 
-	if (ImGui::Button(g_manual_hidden ? "Show effects (manual)" : "Hide effects (manual)"))
+	if (ImGui::Button("Toggle effects (manual)"))
 	{
 		g_manual_toggle = true;
 	}
