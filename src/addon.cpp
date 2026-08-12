@@ -11,6 +11,104 @@
 
 using namespace reshade::api;
 
+#define GP_FLAG 0x80000000u
+
+#define XINPUT_GAMEPAD_DPAD_UP 0x0001
+#define XINPUT_GAMEPAD_DPAD_DOWN 0x0002
+#define XINPUT_GAMEPAD_DPAD_LEFT 0x0004
+#define XINPUT_GAMEPAD_DPAD_RIGHT 0x0008
+#define XINPUT_GAMEPAD_START 0x0010
+#define XINPUT_GAMEPAD_BACK 0x0020
+#define XINPUT_GAMEPAD_LEFT_THUMB 0x0040
+#define XINPUT_GAMEPAD_RIGHT_THUMB 0x0080
+#define XINPUT_GAMEPAD_LEFT_SHOULDER 0x0100
+#define XINPUT_GAMEPAD_RIGHT_SHOULDER 0x0200
+#define XINPUT_GAMEPAD_A 0x1000
+#define XINPUT_GAMEPAD_B 0x2000
+#define XINPUT_GAMEPAD_X 0x4000
+#define XINPUT_GAMEPAD_Y 0x8000
+
+struct XInputGamepad
+{
+	WORD wButtons;
+	BYTE bLeftTrigger;
+	BYTE bRightTrigger;
+	SHORT sThumbLX;
+	SHORT sThumbLY;
+	SHORT sThumbRX;
+	SHORT sThumbRY;
+};
+
+struct XInputState
+{
+	DWORD dwPacketNumber;
+	XInputGamepad Gamepad;
+};
+
+typedef DWORD(WINAPI *XInputGetState_t)(DWORD, XInputState *);
+static XInputGetState_t g_xinput_get_state = nullptr;
+static HMODULE g_xinput_module = nullptr;
+
+static void init_xinput()
+{
+	if (g_xinput_module != nullptr)
+		return;
+	const char *names[] = { "xinput1_4.dll", "xinput1_3.dll", "xinput9_1_0.dll" };
+	for (const char *name : names)
+	{
+		g_xinput_module = LoadLibraryA(name);
+		if (g_xinput_module != nullptr)
+		{
+			g_xinput_get_state = reinterpret_cast<XInputGetState_t>(GetProcAddress(g_xinput_module, "XInputGetState"));
+			if (g_xinput_get_state != nullptr)
+				return;
+			FreeLibrary(g_xinput_module);
+			g_xinput_module = nullptr;
+		}
+	}
+}
+
+static uint16_t gamepad_buttons()
+{
+	init_xinput();
+	if (g_xinput_get_state == nullptr)
+		return 0;
+	XInputState state = {};
+	if (g_xinput_get_state(0, &state) != 0)
+		return 0;
+	return state.Gamepad.wButtons;
+}
+
+static const uint16_t g_gamepad_button_flags[] = {
+	XINPUT_GAMEPAD_DPAD_UP, XINPUT_GAMEPAD_DPAD_DOWN, XINPUT_GAMEPAD_DPAD_LEFT, XINPUT_GAMEPAD_DPAD_RIGHT,
+	XINPUT_GAMEPAD_START, XINPUT_GAMEPAD_BACK, XINPUT_GAMEPAD_LEFT_THUMB, XINPUT_GAMEPAD_RIGHT_THUMB,
+	XINPUT_GAMEPAD_LEFT_SHOULDER, XINPUT_GAMEPAD_RIGHT_SHOULDER, XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_B,
+	XINPUT_GAMEPAD_X, XINPUT_GAMEPAD_Y
+};
+
+static const char *g_gamepad_button_names[] = {
+	"Pad DPad Up", "Pad DPad Down", "Pad DPad Left", "Pad DPad Right",
+	"Pad Start", "Pad Back", "Pad LThumb", "Pad RThumb",
+	"Pad LB", "Pad RB", "Pad A", "Pad B", "Pad X", "Pad Y"
+};
+
+static bool gamepad_button_pressed(uint8_t index)
+{
+	if (index >= 14)
+		return false;
+	uint16_t buttons = gamepad_buttons();
+	return (buttons & g_gamepad_button_flags[index]) != 0;
+}
+
+static uint32_t gamepad_last_button_pressed()
+{
+	uint16_t buttons = gamepad_buttons();
+	for (uint8_t i = 0; i < 14; i++)
+		if ((buttons & g_gamepad_button_flags[i]) != 0)
+			return GP_FLAG | i;
+	return 0;
+}
+
 struct KeyBinding
 {
 	uint32_t key = 0;
@@ -52,6 +150,9 @@ static std::string key_name(uint32_t key);
 
 static bool are_keys_pressed(uint32_t keys, effect_runtime *runtime)
 {
+	if ((keys & GP_FLAG) != 0)
+		return gamepad_button_pressed(static_cast<uint8_t>(keys & 0xFF));
+
 	uint8_t key0 = keys & 0xFF;
 	uint8_t key1 = (keys >> 8) & 0xFF;
 	uint8_t key2 = (keys >> 16) & 0xFF;
@@ -64,8 +165,11 @@ static bool are_keys_pressed(uint32_t keys, effect_runtime *runtime)
 	return ret;
 }
 
-static uint8_t reshade_last_key_pressed(effect_runtime *runtime)
+static uint32_t reshade_last_key_pressed(effect_runtime *runtime)
 {
+	uint32_t gp = gamepad_last_button_pressed();
+	if (gp != 0)
+		return gp;
 	for (uint32_t i = 0x06; i < 256; i++)
 		if (runtime->is_key_pressed(static_cast<uint8_t>(i)))
 			return static_cast<uint8_t>(i);
@@ -239,6 +343,10 @@ static bool key_capture(const char *label, uint32_t *keys, effect_runtime *runti
 			if (ImGui::IsKeyPressed(ImGuiKey_Backspace, false))
 			{
 				*keys = 0;
+			}
+			else if ((last_key_pressed & GP_FLAG) != 0)
+			{
+				*keys = last_key_pressed;
 			}
 			else if (last_key_pressed < 0x10 || last_key_pressed > 0x12)
 			{
@@ -442,6 +550,9 @@ static std::string vk_code_name(uint8_t key)
 
 static std::string key_name(uint32_t keys)
 {
+	if ((keys & GP_FLAG) != 0)
+		return g_gamepad_button_names[keys & 0xFF];
+
 	uint8_t key0 = keys & 0xFF;
 	uint8_t key1 = (keys >> 8) & 0xFF;
 	uint8_t key2 = (keys >> 16) & 0xFF;
